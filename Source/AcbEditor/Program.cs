@@ -10,136 +10,35 @@ using SonicAudioLib.IO;
 
 namespace AcbEditor
 {
-    class ArgParser
-    {
-        public ArgParser(string[] args)
-        {
-            var argumentsType = typeof(Arguments);
-            for (int i = 0; i < args.Length; i++)
-            {
-                if (args[i].StartsWith("--"))
-                {
-                    if (typeof(Arguments).GetProperty(args[i][2..]) == null)
-                    {
-                        Console.WriteLine($"Warning: Unrecognized argument {args[i]}");
-                        continue;
-                    }
-                    else if (
-                        typeof(Arguments).GetProperty(args[i][2..]).PropertyType == typeof(bool)
-                    )
-                    {
-                        if (
-                            args[i + 1].Equals("true", StringComparison.OrdinalIgnoreCase)
-                            || args[i + 1].Equals("false", StringComparison.OrdinalIgnoreCase)
-                        )
-                        {
-                            var prop = argumentsType.GetProperty(args[i][2..]);
-                            prop?.SetValue(
-                                null,
-                                Convert.ChangeType(args[i + 1], prop.PropertyType)
-                            );
-                            i++;
-                        }
-                        else
-                        {
-                            var prop = argumentsType.GetProperty(args[i][2..]);
-                            prop?.SetValue(null, Convert.ChangeType(true, prop.PropertyType));
-                        }
-                    }
-                    else
-                    {
-                        var prop = argumentsType.GetProperty(args[i][2..]);
-                        prop?.SetValue(null, Convert.ChangeType(args[i + 1], prop.PropertyType));
-                        i++;
-                    }
-                }
-                else if (args[i].StartsWith("-"))
-                {
-                    if (!Arguments.ShortArgs.ContainsKey(args[i]))
-                    {
-                        Console.WriteLine($"Warning: Unrecognized argument {args[i]}");
-                        continue;
-                    }
-
-                    string longArg = Arguments.ShortArgs[args[i]];
-                    var prop = argumentsType.GetProperty(longArg);
-                    if (prop.PropertyType == typeof(bool))
-                    {
-                        prop?.SetValue(null, Convert.ChangeType(true, prop.PropertyType));
-                    }
-                    else
-                    {
-                        prop?.SetValue(null, Convert.ChangeType(args[i + 1], prop.PropertyType));
-                        i++;
-                    }
-                }
-                else
-                {
-                    Arguments.InputPath ??= args[i];
-                }
-            }
-        }
-    }
-
-    static class Arguments
-    {
-        public static Dictionary<string, string> ShortArgs = new Dictionary<string, string>
-        {
-            { "-h", "Help" },
-            { "-b", "BufferSize" },
-            { "-t", "EnableThreading" },
-            { "-m", "MaxThreads" },
-        };
-        public static string InputPath { get; set; }
-        public static string OutputPath { get; set; }
-        public static int BufferSize { get; set; } = 4096;
-        public static bool EnableThreading { get; set; } = true;
-        public static int MaxThreads { get; set; } = 4;
-        public static bool Help { get; set; } = false;
-    }
-
     class Program
     {
-        const string HELP_MESSAGE =
-            "ACB Editor - A tool for extracting and repacking ACB files used in CRIWARE audio middleware.\n"
-            + "    -m / --MaxThreads:      Set the maximum number of threads to use for extraction/repacking (default: 4)\n"
-            + "    -t / --EnableThreading: Enable or disable multithreading for extraction/repacking (default: true)\n"
-            + "    -b / --BufferSize:      Set the buffer size in bytes for file operations (default: 4096)\n"
-            + "    -h / --Help:            Display this help message\n"
-            + "\n"
-            + "Using a boolean flag without a value will set it to true (e.g., --EnableThreading will enable threading)\n"
-            + "\n"
-            + "Usage: AcbEditor <input path> [--BufferSize <buffer size>] [--EnableThreading <true/false>] [--MaxThreads <max threads>]";
-        const string PATH_ERROR_MESSAGE = "Error: The specified input path does not exist.";
-        const string INPUT_ERROR_MESSAGE = "Error: No input path provided.";
-        const string NO_ARGS_ERROR_MESSAGE =
-            "Error: No arguments provided. Use --Help for usage information.";
-
         static void Main(string[] args)
         {
             var parser = new ArgParser(args);
 
             if (Arguments.Help)
             {
-                Console.WriteLine(HELP_MESSAGE);
+                Console.WriteLine(Resources.HELP_MESSAGE);
+                Console.WriteLine(Resources.USAGE_INFO);
                 return;
             }
 
             if (args.Length == 0)
             {
-                Console.WriteLine(NO_ARGS_ERROR_MESSAGE);
+                Console.WriteLine(Resources.NO_ARGS_ERROR_MESSAGE);
+                Console.WriteLine(Resources.USAGE_INFO);
                 return;
             }
 
             if (Arguments.InputPath == null)
             {
-                Console.WriteLine(INPUT_ERROR_MESSAGE);
+                Console.WriteLine(Resources.INPUT_ERROR_MESSAGE);
                 return;
             }
 
             if (!File.Exists(Arguments.InputPath) && !Directory.Exists(Arguments.InputPath))
             {
-                Console.WriteLine(PATH_ERROR_MESSAGE);
+                Console.WriteLine(Resources.PATH_ERROR_MESSAGE);
                 return;
             }
 

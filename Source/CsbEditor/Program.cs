@@ -1,17 +1,12 @@
 ﻿using System;
-using System.Linq;
-using System.IO;
-using System.Windows.Forms;
 using System.Collections.Generic;
-
-using CsbEditor.Properties;
-
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using SonicAudioLib;
+using SonicAudioLib.Archives;
 using SonicAudioLib.CriMw;
 using SonicAudioLib.IO;
-using SonicAudioLib.Archives;
-
-using System.Globalization;
 
 namespace CsbEditor
 {
@@ -19,12 +14,31 @@ namespace CsbEditor
     {
         static void Main(string[] args)
         {
-			Settings.Default.Save();
-			
-            if (args.Length < 1)
+            var parser = new ArgParser(args);
+
+            if (Arguments.Help)
             {
-                Console.WriteLine(Resources.Description);
-                Console.ReadLine();
+                Console.WriteLine(Resources.HELP_MESSAGE);
+                Console.WriteLine(Resources.USAGE_INFO);
+                return;
+            }
+
+            if (args.Length == 0)
+            {
+                Console.WriteLine(Resources.NO_ARGS_ERROR_MESSAGE);
+                Console.WriteLine(Resources.USAGE_INFO);
+                return;
+            }
+
+            if (Arguments.InputPath == null)
+            {
+                Console.WriteLine(Resources.INPUT_ERROR_MESSAGE);
+                return;
+            }
+
+            if (!File.Exists(Arguments.InputPath) && !Directory.Exists(Arguments.InputPath))
+            {
+                Console.WriteLine(Resources.PATH_ERROR_MESSAGE);
                 return;
             }
 
@@ -37,12 +51,15 @@ namespace CsbEditor
                     var extractor = new DataExtractor();
                     extractor.ProgressChanged += OnProgressChanged;
 
-                    extractor.BufferSize = Settings.Default.BufferSize;
-                    extractor.EnableThreading = Settings.Default.EnableThreading;
-                    extractor.MaxThreads = Settings.Default.MaxThreads;
+                    extractor.BufferSize = Arguments.BufferSize;
+                    extractor.EnableThreading = Arguments.EnableThreading;
+                    extractor.MaxThreads = Arguments.MaxThreads;
 
                     string baseDirectory = Path.GetDirectoryName(args[0]);
-                    string outputDirectoryName = Path.Combine(baseDirectory, Path.GetFileNameWithoutExtension(args[0]));
+                    string outputDirectoryName = Path.Combine(
+                        baseDirectory,
+                        Path.GetFileNameWithoutExtension(args[0])
+                    );
 
                     CriCpkArchive cpkArchive = null;
                     string cpkPath = outputDirectoryName + ".cpk";
@@ -50,7 +67,7 @@ namespace CsbEditor
 
                     //This should fix "File not found" error in case-sensitive file systems.
                     //Add new extensions when necessary.
-                    foreach (string extension in new string[] {"cpk", "CPK"})
+                    foreach (string extension in new string[] { "cpk", "CPK" })
                     {
                         if (found)
                             break;
@@ -66,29 +83,38 @@ namespace CsbEditor
                             if (reader.GetString("name") == "SOUND_ELEMENT")
                             {
                                 long tablePosition = reader.GetPosition("utf");
-                                using (CriTableReader sdlReader = CriTableReader.Create(reader.GetSubStream("utf")))
+                                using (
+                                    CriTableReader sdlReader = CriTableReader.Create(
+                                        reader.GetSubStream("utf")
+                                    )
+                                )
                                 {
                                     while (sdlReader.Read())
                                     {
                                         if (sdlReader.GetByte("fmt") != 0)
                                         {
-                                            throw new Exception("The given CSB file contains an audio file which is not an ADX. Only CSB files with ADXs are supported.");
+                                            throw new Exception(
+                                                "The given CSB file contains an audio file which is not an ADX. Only CSB files with ADXs are supported."
+                                            );
                                         }
 
                                         bool streaming = sdlReader.GetBoolean("stmflg");
                                         if (streaming && !found)
                                         {
-                                            throw new Exception("Cannot find the external .CPK file for this .CSB file. Please ensure that the external .CPK file is stored in the directory where the .CPK file is.");
+                                            throw new Exception(
+                                                "Cannot find the external .CPK file for this .CSB file. Please ensure that the external .CPK file is stored in the directory where the .CPK file is."
+                                            );
                                         }
-
                                         else if (streaming && found && cpkArchive == null)
                                         {
                                             cpkArchive = new CriCpkArchive();
-                                            cpkArchive.Load(cpkPath, Settings.Default.BufferSize);
+                                            cpkArchive.Load(cpkPath, Arguments.BufferSize);
                                         }
 
                                         string sdlName = sdlReader.GetString("name");
-                                        DirectoryInfo destinationPath = new DirectoryInfo(Path.Combine(outputDirectoryName, sdlName));
+                                        DirectoryInfo destinationPath = new DirectoryInfo(
+                                            Path.Combine(outputDirectoryName, sdlName)
+                                        );
                                         destinationPath.Create();
 
                                         CriAaxArchive aaxArchive = new CriAaxArchive();
@@ -106,28 +132,45 @@ namespace CsbEditor
 
                                                     foreach (CriAaxEntry entry in aaxArchive)
                                                     {
-                                                        extractor.Add(cpkPath,
-                                                            Path.Combine(destinationPath.FullName,
-                                                            entry.Flag == CriAaxEntryFlag.Intro ? "Intro.adx" : "Loop.adx"),
-                                                            cpkEntry.Position + entry.Position, entry.Length);
+                                                        extractor.Add(
+                                                            cpkPath,
+                                                            Path.Combine(
+                                                                destinationPath.FullName,
+                                                                entry.Flag == CriAaxEntryFlag.Intro
+                                                                    ? "Intro.adx"
+                                                                    : "Loop.adx"
+                                                            ),
+                                                            cpkEntry.Position + entry.Position,
+                                                            entry.Length
+                                                        );
                                                     }
                                                 }
                                             }
                                         }
-
                                         else
                                         {
                                             long aaxPosition = sdlReader.GetPosition("data");
-                                            using (Stream aaxSource = sdlReader.GetSubStream("data"))
+                                            using (
+                                                Stream aaxSource = sdlReader.GetSubStream("data")
+                                            )
                                             {
                                                 aaxArchive.Read(aaxSource);
 
                                                 foreach (CriAaxEntry entry in aaxArchive)
                                                 {
-                                                    extractor.Add(args[0],
-                                                        Path.Combine(destinationPath.FullName,
-                                                        entry.Flag == CriAaxEntryFlag.Intro ? "Intro.adx" : "Loop.adx"),
-                                                        tablePosition + aaxPosition + entry.Position, entry.Length);
+                                                    extractor.Add(
+                                                        args[0],
+                                                        Path.Combine(
+                                                            destinationPath.FullName,
+                                                            entry.Flag == CriAaxEntryFlag.Intro
+                                                                ? "Intro.adx"
+                                                                : "Loop.adx"
+                                                        ),
+                                                        tablePosition
+                                                            + aaxPosition
+                                                            + entry.Position,
+                                                        entry.Length
+                                                    );
                                                 }
                                             }
                                         }
@@ -141,13 +184,12 @@ namespace CsbEditor
 
                     extractor.Run();
                 }
-
                 else if (File.GetAttributes(args[0]).HasFlag(FileAttributes.Directory))
                 {
                     string baseDirectory = Path.GetDirectoryName(args[0]);
                     string csbPath = args[0] + ".csb";
 
-                    foreach (string extension in new string[] {"csb", "CSB"})
+                    foreach (string extension in new string[] { "csb", "CSB" })
                     {
                         if (File.Exists(csbPath))
                             break;
@@ -156,16 +198,20 @@ namespace CsbEditor
 
                     if (!File.Exists(csbPath))
                     {
-                        throw new Exception("Cannot find the .CSB file for this directory. Please ensure that the .CSB file is stored in the directory where this directory is.");
+                        throw new Exception(
+                            "Cannot find the .CSB file for this directory. Please ensure that the .CSB file is stored in the directory where this directory is."
+                        );
                     }
 
                     CriCpkArchive cpkArchive = new CriCpkArchive();
                     cpkArchive.ProgressChanged += OnProgressChanged;
 
                     CriTable csbFile = new CriTable();
-                    csbFile.Load(csbPath, Settings.Default.BufferSize);
+                    csbFile.Load(csbPath, Arguments.BufferSize);
 
-                    CriRow soundElementRow = csbFile.Rows.First(row => (string)row["name"] == "SOUND_ELEMENT");
+                    CriRow soundElementRow = csbFile.Rows.First(row =>
+                        (string)row["name"] == "SOUND_ELEMENT"
+                    );
 
                     CriTable soundElementTable = new CriTable();
                     soundElementTable.Load((byte[])soundElementRow["utf"]);
@@ -176,11 +222,15 @@ namespace CsbEditor
                     {
                         string sdlName = (string)sdlRow["name"];
 
-                        DirectoryInfo sdlDirectory = new DirectoryInfo(Path.Combine(args[0], sdlName));
+                        DirectoryInfo sdlDirectory = new DirectoryInfo(
+                            Path.Combine(args[0], sdlName)
+                        );
 
                         if (!sdlDirectory.Exists)
                         {
-                            throw new Exception($"Cannot find sound element directory for replacement.\nPath attempt: {sdlDirectory.FullName}");
+                            throw new Exception(
+                                $"Cannot find sound element directory for replacement.\nPath attempt: {sdlDirectory.FullName}"
+                            );
                         }
 
                         bool streaming = (byte)sdlRow["stmflg"] != 0;
@@ -191,7 +241,10 @@ namespace CsbEditor
                         foreach (FileInfo file in sdlDirectory.GetFiles("*.adx"))
                         {
                             CriAaxEntry entry = new CriAaxEntry();
-                            if (file.Name.ToLower(CultureInfo.GetCultureInfo("en-US")) == "intro.adx")
+                            if (
+                                file.Name.ToLower(CultureInfo.GetCultureInfo("en-US"))
+                                == "intro.adx"
+                            )
                             {
                                 entry.Flag = CriAaxEntryFlag.Intro;
                                 entry.FilePath = file;
@@ -199,8 +252,9 @@ namespace CsbEditor
 
                                 ReadAdx(file, out sampleRate, out numberChannels);
                             }
-
-                            else if (file.Name.ToLower(CultureInfo.GetCultureInfo("en-US")) == "loop.adx")
+                            else if (
+                                file.Name.ToLower(CultureInfo.GetCultureInfo("en-US")) == "loop.adx"
+                            )
                             {
                                 entry.Flag = CriAaxEntryFlag.Loop;
                                 entry.FilePath = file;
@@ -220,9 +274,8 @@ namespace CsbEditor
                             junks.Add(entry.FilePath);
 
                             cpkArchive.Add(entry);
-                            aaxArchive.Save(entry.FilePath.FullName, Settings.Default.BufferSize);
+                            aaxArchive.Save(entry.FilePath.FullName, Arguments.BufferSize);
                         }
-
                         else
                         {
                             sdlRow["data"] = aaxArchive.Save();
@@ -236,12 +289,12 @@ namespace CsbEditor
                     soundElementRow["utf"] = soundElementTable.Save();
 
                     csbFile.WriterSettings = CriTableWriterSettings.AdxSettings;
-                    csbFile.Save(csbPath, Settings.Default.BufferSize);
+                    csbFile.Save(csbPath, Arguments.BufferSize);
 
                     if (cpkArchive.Count > 0)
                     {
                         string cpkPath = args[0] + ".cpk";
-                        foreach (string extension in new string[] {"cpk", "CPK"})
+                        foreach (string extension in new string[] { "cpk", "CPK" })
                         {
                             if (File.Exists(args[0] + "." + extension))
                             {
@@ -250,7 +303,7 @@ namespace CsbEditor
                             }
                         }
 
-                        cpkArchive.Save(cpkPath, Settings.Default.BufferSize);
+                        cpkArchive.Save(cpkPath, Arguments.BufferSize);
                     }
 
                     foreach (FileInfo junk in junks)
@@ -260,10 +313,14 @@ namespace CsbEditor
                 }
 #if !DEBUG
             }
-
             catch (Exception exception)
             {
-                MessageBox.Show($"{exception.Message}", "CSB Editor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(
+                    $"{exception.Message}",
+                    "CSB Editor",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
             }
 #endif
         }
