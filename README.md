@@ -1,3 +1,6 @@
+> [!NOTE]  
+> This is a fork of [SonicAudioTools](https://github.com/blueskythlikesclouds/SonicAudioTools) based on my [fork](https://github.com/alexankitty/SonicAudioTools) which strips out all instances of WinForms for better cross platform support. If you need to run the main utility under Linux or something else, please use WINE. This project should be used by other projects who only need the CLI interface. CsbEditor is missing as it depends on at3plusdecoder.dll and vgmstream.dll. I did modify [maiatrac3plus](https://github.com/alexankitty/maiatrac3plus) for cross compilation. The only work would be for vgmstream.
+
 # Sonic Audio Tools
 
 A set of tools to modify CRIWARE file formats.
