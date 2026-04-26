@@ -1,9 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Forms;
-using AcbEditor.Properties;
 using SonicAudioLib;
 using SonicAudioLib.Archives;
 using SonicAudioLib.CriMw;
@@ -11,43 +10,159 @@ using SonicAudioLib.IO;
 
 namespace AcbEditor
 {
+    class ArgParser
+    {
+        public ArgParser(string[] args)
+        {
+            var argumentsType = typeof(Arguments);
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i].StartsWith("--"))
+                {
+                    if (typeof(Arguments).GetProperty(args[i][2..]) == null)
+                    {
+                        Console.WriteLine($"Warning: Unrecognized argument {args[i]}");
+                        continue;
+                    }
+                    else if (
+                        typeof(Arguments).GetProperty(args[i][2..]).PropertyType == typeof(bool)
+                    )
+                    {
+                        if (
+                            args[i + 1].Equals("true", StringComparison.OrdinalIgnoreCase)
+                            || args[i + 1].Equals("false", StringComparison.OrdinalIgnoreCase)
+                        )
+                        {
+                            var prop = argumentsType.GetProperty(args[i][2..]);
+                            prop?.SetValue(
+                                null,
+                                Convert.ChangeType(args[i + 1], prop.PropertyType)
+                            );
+                            i++;
+                        }
+                        else
+                        {
+                            var prop = argumentsType.GetProperty(args[i][2..]);
+                            prop?.SetValue(null, Convert.ChangeType(true, prop.PropertyType));
+                        }
+                    }
+                    else
+                    {
+                        var prop = argumentsType.GetProperty(args[i][2..]);
+                        prop?.SetValue(null, Convert.ChangeType(args[i + 1], prop.PropertyType));
+                        i++;
+                    }
+                }
+                else if (args[i].StartsWith("-"))
+                {
+                    if (!Arguments.ShortArgs.ContainsKey(args[i]))
+                    {
+                        Console.WriteLine($"Warning: Unrecognized argument {args[i]}");
+                        continue;
+                    }
+
+                    string longArg = Arguments.ShortArgs[args[i]];
+                    var prop = argumentsType.GetProperty(longArg);
+                    if (prop.PropertyType == typeof(bool))
+                    {
+                        prop?.SetValue(null, Convert.ChangeType(true, prop.PropertyType));
+                    }
+                    else
+                    {
+                        prop?.SetValue(null, Convert.ChangeType(args[i + 1], prop.PropertyType));
+                        i++;
+                    }
+                }
+                else
+                {
+                    Arguments.InputPath ??= args[i];
+                }
+            }
+        }
+    }
+
+    static class Arguments
+    {
+        public static Dictionary<string, string> ShortArgs = new Dictionary<string, string>
+        {
+            { "-h", "Help" },
+            { "-b", "BufferSize" },
+            { "-t", "EnableThreading" },
+            { "-m", "MaxThreads" },
+        };
+        public static string InputPath { get; set; }
+        public static string OutputPath { get; set; }
+        public static int BufferSize { get; set; } = 4096;
+        public static bool EnableThreading { get; set; } = true;
+        public static int MaxThreads { get; set; } = 4;
+        public static bool Help { get; set; } = false;
+    }
+
     class Program
     {
+        const string HELP_MESSAGE =
+            "ACB Editor - A tool for extracting and repacking ACB files used in CRIWARE audio middleware.\n"
+            + "    -m / --MaxThreads:      Set the maximum number of threads to use for extraction/repacking (default: 4)\n"
+            + "    -t / --EnableThreading: Enable or disable multithreading for extraction/repacking (default: true)\n"
+            + "    -b / --BufferSize:      Set the buffer size in bytes for file operations (default: 4096)\n"
+            + "    -h / --Help:            Display this help message\n"
+            + "\n"
+            + "Using a boolean flag without a value will set it to true (e.g., --EnableThreading will enable threading)\n"
+            + "\n"
+            + "Usage: AcbEditor <input path> [--BufferSize <buffer size>] [--EnableThreading <true/false>] [--MaxThreads <max threads>]";
+        const string PATH_ERROR_MESSAGE = "Error: The specified input path does not exist.";
+        const string INPUT_ERROR_MESSAGE = "Error: No input path provided.";
+        const string NO_ARGS_ERROR_MESSAGE =
+            "Error: No arguments provided. Use --Help for usage information.";
+
         static void Main(string[] args)
         {
-            var configFile = $"{System.Reflection.Assembly.GetExecutingAssembly().Location}.config";
-            if (!File.Exists(configFile))
-            {
-                Settings.Default.Reset();
-                Settings.Default.Save();
-            }
+            var parser = new ArgParser(args);
 
-            if (args.Length < 1)
+            if (Arguments.Help)
             {
-                Console.WriteLine(Resources.Description);
-                Console.ReadLine();
+                Console.WriteLine(HELP_MESSAGE);
                 return;
             }
+
+            if (args.Length == 0)
+            {
+                Console.WriteLine(NO_ARGS_ERROR_MESSAGE);
+                return;
+            }
+
+            if (Arguments.InputPath == null)
+            {
+                Console.WriteLine(INPUT_ERROR_MESSAGE);
+                return;
+            }
+
+            if (!File.Exists(Arguments.InputPath) && !Directory.Exists(Arguments.InputPath))
+            {
+                Console.WriteLine(PATH_ERROR_MESSAGE);
+                return;
+            }
+
 #if !DEBUG
             try
             {
 #endif
-                if (args[0].EndsWith(".acb", StringComparison.OrdinalIgnoreCase))
+                if (Arguments.InputPath.EndsWith(".acb", StringComparison.OrdinalIgnoreCase))
                 {
                     var extractor = new DataExtractor();
                     extractor.ProgressChanged += OnProgressChanged;
 
-                    extractor.BufferSize = Settings.Default.BufferSize;
-                    extractor.EnableThreading = Settings.Default.EnableThreading;
-                    extractor.MaxThreads = Settings.Default.MaxThreads;
+                    extractor.BufferSize = Arguments.BufferSize;
+                    extractor.EnableThreading = Arguments.EnableThreading;
+                    extractor.MaxThreads = Arguments.MaxThreads;
 
-                    string baseDirectory = Path.GetDirectoryName(args[0]);
-                    string outputDirectoryPath = Path.ChangeExtension(args[0], null);
+                    string baseDirectory = Path.GetDirectoryName(Arguments.InputPath);
+                    string outputDirectoryPath = Path.ChangeExtension(Arguments.InputPath, null);
                     string extAfs2ArchivePath = string.Empty;
 
                     Directory.CreateDirectory(outputDirectoryPath);
 
-                    using (CriTableReader acbReader = CriTableReader.Create(args[0]))
+                    using (CriTableReader acbReader = CriTableReader.Create(Arguments.InputPath))
                     {
                         acbReader.Read();
 
@@ -200,7 +315,7 @@ namespace AcbEditor
                                         extCpkArchive = new CriCpkArchive();
                                         extCpkArchive.Load(
                                             extAfs2ArchivePath,
-                                            Settings.Default.BufferSize
+                                            Arguments.BufferSize
                                         );
                                     }
 
@@ -236,7 +351,7 @@ namespace AcbEditor
                                     }
 
                                     extractor.Add(
-                                        args[0],
+                                        Arguments.InputPath,
                                         outputName,
                                         awbPosition + afs2Entry.Position,
                                         afs2Entry.Length
@@ -248,23 +363,23 @@ namespace AcbEditor
 
                     extractor.Run();
                 }
-                else if (File.GetAttributes(args[0]).HasFlag(FileAttributes.Directory))
+                else if (File.GetAttributes(Arguments.InputPath).HasFlag(FileAttributes.Directory))
                 {
-                    string baseDirectory = Path.GetDirectoryName(args[0]);
-                    string acbPath = args[0] + ".acb";
+                    string baseDirectory = Path.GetDirectoryName(Arguments.InputPath);
+                    string acbPath = Arguments.InputPath + ".acb";
 
-                    string awbPath = args[0] + "_streamfiles.awb";
+                    string awbPath = Arguments.InputPath + "_streamfiles.awb";
                     bool found = File.Exists(awbPath);
 
                     if (!found)
                     {
-                        awbPath = args[0] + "_STR.awb";
+                        awbPath = Arguments.InputPath + "_STR.awb";
                         found = File.Exists(awbPath);
                     }
 
                     if (!found)
                     {
-                        awbPath = args[0] + ".awb";
+                        awbPath = Arguments.InputPath + ".awb";
                     }
 
                     if (!File.Exists(acbPath))
@@ -275,7 +390,7 @@ namespace AcbEditor
                     }
 
                     CriTable acbFile = new CriTable();
-                    acbFile.Load(acbPath, Settings.Default.BufferSize);
+                    acbFile.Load(acbPath, Arguments.BufferSize);
 
                     CriAfs2Archive afs2Archive = new CriAfs2Archive();
                     CriAfs2Archive extAfs2Archive = new CriAfs2Archive();
@@ -325,7 +440,7 @@ namespace AcbEditor
                             }
 
                             inputName += GetExtension(encodeType);
-                            inputName = Path.Combine(args[0], inputName);
+                            inputName = Path.Combine(Arguments.InputPath, inputName);
 
                             if (!File.Exists(inputName))
                             {
@@ -368,14 +483,17 @@ namespace AcbEditor
                     acbFile.Rows[0]["AwbFile"] = null;
                     acbFile.Rows[0]["StreamAwbAfs2Header"] = null;
 
-                    string subKeyFilePath = Path.Combine(args[0], ".subkey");
+                    string subKeyFilePath = Path.Combine(Arguments.InputPath, ".subkey");
                     if (File.Exists(subKeyFilePath))
                     {
                         using (var stream = File.OpenRead(subKeyFilePath))
                             afs2Archive.SubKey = DataStream.ReadUInt16(stream);
                     }
 
-                    string subKeyStreamingFilePath = Path.Combine(args[0], ".subkey_streaming");
+                    string subKeyStreamingFilePath = Path.Combine(
+                        Arguments.InputPath,
+                        ".subkey_streaming"
+                    );
                     if (File.Exists(subKeyStreamingFilePath))
                     {
                         using (var stream = File.OpenRead(subKeyStreamingFilePath))
@@ -396,11 +514,11 @@ namespace AcbEditor
                         Console.WriteLine("Saving streaming AWB file...");
                         if (cpkMode)
                         {
-                            extCpkArchive.Save(awbPath, Settings.Default.BufferSize);
+                            extCpkArchive.Save(awbPath, Arguments.BufferSize);
                         }
                         else
                         {
-                            extAfs2Archive.Save(awbPath, Settings.Default.BufferSize);
+                            extAfs2Archive.Save(awbPath, Arguments.BufferSize);
 
                             if (Encoding.UTF8.GetString(streamAwbAfs2Header, 0, 4) == "@UTF")
                             {
@@ -419,7 +537,7 @@ namespace AcbEditor
                     }
 
                     acbFile.WriterSettings = CriTableWriterSettings.Adx2Settings;
-                    acbFile.Save(acbPath, Settings.Default.BufferSize);
+                    acbFile.Save(acbPath, Arguments.BufferSize);
                 }
 #if !DEBUG
             }
