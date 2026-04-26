@@ -315,12 +315,7 @@ namespace CsbEditor
             }
             catch (Exception exception)
             {
-                MessageBox.Show(
-                    $"{exception.Message}",
-                    "CSB Editor",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
+                Console.WriteLine("An error occurred: " + exception.Message);
             }
 #endif
         }

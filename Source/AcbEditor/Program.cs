@@ -442,12 +442,7 @@ namespace AcbEditor
             }
             catch (Exception exception)
             {
-                MessageBox.Show(
-                    $"{exception.Message}",
-                    "ACB Editor",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
+                Console.WriteLine("An error occurred: " + exception.Message);
             }
 #endif
         }
